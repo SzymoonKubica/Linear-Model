@@ -1,0 +1,289 @@
+---
+title: "Linear Model"
+author:
+  name: "Szymon Kubica"
+output: html_notebook
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Installing and importing packages
+
+```{r warning=FALSE}
+#install.packages("readxl")
+#install.packages("tidyverse")
+
+library(readxl)
+library(tidyverse)
+library(caret)
+```
+
+# Loading and cleaning data
+
+## Loading Data
+
+I've got this data from stat.gov.pl this data is about life duration in
+cities and villages in Poland between 1990 and 2022.
+
+```{r}
+rawData<- read_excel("dane.xlsx")
+```
+
+```{r}
+rawData
+```
+
+## Cleaning data
+
+Deleting first 3 rows and last 3
+
+```{r}
+cleaningData<- rawData
+cleaningData<- cleaningData%>% slice(-1:-3,-37:-39)
+```
+
+For renaming columns
+
+```{r}
+col1<- colnames(cleaningData)[1]
+col2<- colnames(cleaningData)[2]
+col3<- colnames(cleaningData)[3]
+col4<- colnames(cleaningData)[4]
+col5<- colnames(cleaningData)[5]
+col6<- colnames(cleaningData)[6]
+col7<- colnames(cleaningData)[7]
+col8<- colnames(cleaningData)[8]
+```
+
+Renaming
+
+```{r warning=FALSE}
+cleaningData<- cleaningData%>%rename(year=col1,summaryMen=col2,summaryWomen=col3,
+                                     cityMen=col4,cityWomen=col5, villageMen=col6,villageWomen=col7)
+```
+
+Deleting null column
+
+```{r}
+cleaningData=cleaningData[,-which(names(cleaningData)==col8)]
+```
+
+```{r}
+head(cleaningData)
+```
+
+Changing data type from character to double
+
+```{r}
+cleaningData<- cleaningData %>% mutate_if(is.character,as.double)
+```
+
+```{r}
+cleanData<- cleaningData
+```
+
+```{r}
+head(cleanData)
+```
+
+Now our data is clean and ready
+
+# Linear Model
+
+## Spiting data into train and test sets
+
+```{r}
+dataTrainSize<- floor(length(cleanData$year)*0.8)
+dataTrainSize
+```
+
+Because our data is time series, we'll take first 26 records as our
+train set. We are going to test our linear model with all remaining
+records.
+
+```{r}
+trainData<-cleanData[1:dataTrainSize,]
+testData<-cleanData[(dataTrainSize+1):length(cleanData$year),]
+```
+
+## Linear Model
+
+### Summary women
+
+```{r}
+linearModelWomen<- lm(summaryWomen ~ year, data = trainData)
+linearModelSummaryWomen<- summary(linearModelWomen)
+linearModelSummaryWomen
+```
+
+### Graph
+
+```{r}
+ggplot(trainData, aes(x=year, y=summaryWomen)) + labs(title="Graph of relationship between average life duration of women and year", x='Year', y = "Average life duration of women")+ geom_point() + geom_smooth(method='lm' ,formula=y~x, se=FALSE)
+```
+
+### Village men
+
+```{r}
+linearModelMenVillage<- lm(villageMen ~ year, data = trainData)
+linearModelSummaryMen<- summary(linearModelMenVillage)
+linearModelSummaryMen
+```
+
+### Graph
+
+```{r}
+ggplot(trainData, aes(x=year, y=villageMen)) + labs(title="Graph of relationship between average life duration of men and year", x='Year', y = "Average life duration of men") + geom_point() + geom_smooth(method='lm' ,formula=y~x, se=FALSE)
+```
+
+In both cases line looks well fitted for our point's. Residual standard
+error looks small and R-squared is close to 1 and that means our model
+is well fitted for our data.
+
+## Assumptions
+
+Before we draw conclusion, we have to answer one question. Is our model
+valid?
+
+### Normal distribution residuals
+
+Our sample is small enough to use Shaprio- Wilk test
+
+```{r}
+shapiro.test(linearModelWomen$residuals)
+```
+
+```{r}
+shapiro.test(linearModelMenVillage$residuals)
+```
+
+Our p-value is much greater than 0.05. That means we can't reject
+alternative hypothesis.
+
+We can check Q-Q plot to be sure about residuals distribution.
+
+```{r}
+ggplot(linearModelWomen, aes(sample=.resid)) + geom_qq() + geom_qq_line() + labs(title='Q-Q plot of residuals', x='Theoretical', y='Sample')
+```
+
+```{r}
+ggplot(linearModelMenVillage, aes(sample=.resid)) + geom_qq() + geom_qq_line() + labs(title='Q-Q plot of residuals', x='Theoretical', y='Sample')
+```
+
+We can adopt residuals distribution is normal.
+
+### Mean residuals close to 0
+
+```{r}
+t.test(linearModelWomen$residuals)
+```
+
+```{r}
+t.test(linearModelMenVillage$residuals)
+```
+
+T- test showed that residuals mean is almost equals 0.
+
+### Independent residuals
+
+```{r}
+lmtest::dwtest(linearModelWomen)
+```
+
+```{r}
+lmtest::dwtest(linearModelMenVillage)
+```
+
+p-value is less than 0.05. That means that residuals are not
+independent.
+
+### Homoscedasticity
+
+```{r}
+plot(linearModelWomen, which = 3)
+```
+
+```{r}
+plot(linearModelMenVillage, which = 3)
+```
+
+```{r}
+lmtest::bptest(linearModelWomen)
+```
+
+```{r}
+lmtest::bptest(linearModelMenVillage)
+```
+
+p-value is much greater than 0.05 that means we can not adopt hypothesis
+about heteroscedasticity. That means alternative hypothesis is true.
+
+### Summary
+
+Our model is not fullfiling all assumptions but before we reject it, we
+can check model's accuracy.
+
+## Model accuracy
+
+To check accuracy of a model we are going to need few functions.
+
+```{r}
+MAPE <- function(yActual, yPredicted){              #mean absolute percentage error
+  return(mean(abs(yActual-yPredicted)/yActual)*100) 
+}
+RMSE <- function(yActual, yPredicted){              #root mean squared error
+  return(sqrt(mean((yActual-yPredicted)^2))) 
+}
+MAE <- function(yActual, yPredicted){               #mean absolute error
+  return(mean(abs(yActual-yPredicted))) 
+}
+```
+
+### MAPE
+
+```{r}
+MAPE(trainData$summaryWomen,predict(linearModelWomen, trainData))
+MAPE(testData$summaryWomen,predict(linearModelWomen, testData))
+```
+
+```{r}
+MAPE(trainData$villageMen,predict(linearModelMenVillage, trainData))
+MAPE(testData$villageMen,predict(linearModelMenVillage, testData))
+```
+
+First number is mean absolute percentage error. It's much greater than
+it was in train data. Because it's percentage error that means, our
+prediction is still accurate but in far future our predictions won't be
+correct.
+
+### RMSE
+
+```{r}
+RMSE(trainData$summaryWomen,predict(linearModelWomen, trainData))
+RMSE(testData$summaryWomen,predict(linearModelWomen, testData))
+```
+
+```{r}
+RMSE(trainData$villageMen,predict(linearModelMenVillage, trainData))
+RMSE(testData$villageMen,predict(linearModelMenVillage, testData))
+```
+
+As in the MAPE our error is greater in test set than in train set.
+
+### MAE
+
+```{r}
+MAE(trainData$summaryWomen,predict(linearModelWomen, trainData))
+MAE(testData$summaryWomen,predict(linearModelWomen, testData))
+```
+
+```{r}
+MAE(trainData$villageMen,predict(linearModelMenVillage, trainData))
+MAE(testData$villageMen,predict(linearModelMenVillage, testData))
+```
+
+Each error is greater in test set than in train. It's because our data
+set is time series. Linear model isn't great tool to predict changes in
+time because of trends. But i think it's good enough to predict short
+time changes.
