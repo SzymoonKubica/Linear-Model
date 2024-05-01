@@ -1,0 +1,182 @@
+---
+title: "R Notebook"
+author: "Szymon Kubica"
+output: html_notebook
+---
+
+# Modele H2O
+
+## Instalacja i dodawanie pakietów
+
+```{r warning=FALSE}
+#install.packages("rsparkling")
+#spark_install()
+```
+
+```{r warning=FALSE}
+library(rsparkling)
+library(sparklyr)
+library(h2o)
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(caret)
+library(ggplot2)
+```
+
+```{r}
+options(rsparkling.sparklingwater.version = "2.0.3")
+```
+
+```{r}
+install.packages("rsparkling", type = "source", repos = "http://h2o-release.s3.amazonaws.com/sparkling-water/spark-2.4/3.44.0.3-1-2.4/R")
+```
+
+```{r}
+library(sparklyr)
+
+sc <- spark_connect(master = "local")
+```
+
+## Model regresji logistycznej
+
+Będziemy pracować z danymi z przedmiotu regresja i analiza wariancji, których używaliśmy do modelu regresji logistycznej.
+
+```{r warning=FALSE}
+data <- spark_read_csv(sc,"banknoty" ,"data.csv")
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+X1=colnames(data)[1]
+X2=colnames(data)[2]
+X3=colnames(data)[3]
+X4=colnames(data)[4]
+X5=colnames(data)[5]
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+library(dplyr)
+```
+
+```{r warning=FALSE}
+data=data%>% dplyr::rename('X1'=X1,'X2'=X2,'X3'=X3,'X4'=X4,'X5'=X5)
+```
+
+```{r warning=FALSE}
+h2o.init()
+```
+
+
+```{r}
+partitions= sdf_random_split(data, training=0.75,test=0.25,seed=1000)
+```
+
+```{r}
+partitions
+```
+
+```{r}
+train=partitions$training
+test=partitions$test
+```
+
+```{r}
+typeof(train)
+```
+
+```{r}
+do.call(data.frame, train)
+```
+
+
+```{r}
+trainDf=data.frame(train)
+testDf=data.frame(test)
+```
+
+```{r}
+h2oTrain=as.h2o(trainDf)
+h2oTest=as.h2o(testDf)
+```
+
+```{r}
+typeof(h2oTrain)
+```
+
+```{r}
+glmModel <- h2o.glm(x = c("X1", "X2",'X3','X4'), 
+                     y = "X5", 
+                     training_frame = h2oTrain,
+                     lambda_search = TRUE)
+```
+
+```{r}
+glmModel
+```
+
+## Przejście na Spark df
+
+```{r}
+pred = h2o.predict(glmModel, newdata = h2oTest)
+
+dfPred=as.data.frame(pred)
+
+predicted=copy_to(sc,dfPred,'predicted',overwrite = TRUE)
+
+```
+
+## Wyciągnięcie 0 i 1 z autentyczności banknotów
+
+```{r}
+predicted
+```
+
+```{r}
+actual = test %>% select(X5) %>% collect() %>% '[['("X5")
+```
+
+Zmiana listy na wektor
+
+```{r}
+typeof(predicted)
+```
+
+Zaokrąglenie i zmiana typu danych predicted z dbl na int
+
+
+```{r}
+predictedActual = data.frame(
+  predicted = predicted,
+  actual = actual
+)
+predictedActual
+```
+
+```{r}
+predictedActual$predict = as.integer(
+  round(
+    predictedActual$predict,
+    digits = 0
+  )
+)
+```
+
+```{r}
+predictedActual
+```
+
+```{r}
+confMatrix = table(predictedActual$predict,predictedActual$actual)
+```
+
+```{r}
+confMatrix
+```
