@@ -1,4 +1,4 @@
-## This is my portfolio. All you can find here is 
+## All you can find here is 
   1. Linear Model - R
   2. dane.xlsx - it's data used in linear model and ANOVA (https://demografia.stat.gov.pl/bazademografia/TrwanieZycia.aspx)
   3. data.csv - data of few numeric values of banknote
